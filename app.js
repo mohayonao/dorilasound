@@ -1,3 +1,5 @@
+require.paths.unshift(__dirname);
+
 var express  = require("express");
 var crypto   = require("crypto");
 var util     = require("util");
@@ -73,12 +75,13 @@ function sendDorilaSound(req, res) {
     digest = sha1sum.digest("hex");
     filename = digest + ".wav";
     
-    pos1 = match[1]|0;
-    pos2 = match[2]|0;
+    pos1 = (match[1]|0) || 0;
+    pos2 = (match[2]|0) || 0;
     length = pos2 - pos1;
     if (! path.existsSync(filename)) {
         makeDorilaSound(filename, text);
     }
+    
     fs.open(filename, "r", function(err, fd) {
         fs.fstat(fd, function(err, stats) {
             var filesize = util.inspect(stats).match(/size: (\d+)/)[1]|0;
