@@ -29,11 +29,15 @@ var SAMPLERATE = 22050;
 var app = module.exports = express.createServer();
 
 app.get("/", function(req, res) {
+    var result = false;
 //    if (req.host === "mohayonao.herokuapp.com") {
         if (req.headers["user-agent"].indexOf("iPhone") !== -1) {
-            sendDorilaSound(req, res);
+            result = sendDorilaSound(req, res);
         }
 //    }
+    if (!result) {
+        res.send("hello, world.");
+    }
 });
 app.listen(process.env.PORT || 3001);
 
@@ -59,8 +63,10 @@ function sendDorilaSound(req, res) {
     var sha1sum = crypto.createHash("sha1");
     var digest, filename, text, match, pos1, pos2, length;
     
+    console.log("RANGE", req.headers.range);
+    if (!req.headers.range) return false;
     match = req.headers.range.match(/^bytes=(\d+)-(\d+)$/);
-    if (!match) return;
+    if (!match) return false;
     
     text = decodeURI(req.url.substr(2));
     sha1sum.update(text);
@@ -100,6 +106,7 @@ function sendDorilaSound(req, res) {
             }
         });
     });
+    return true;
 }
 
 
