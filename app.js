@@ -29,22 +29,22 @@ if (typeof(Float32Array) === "undefined") {
 
 var SAMPLERATE = 22050;
 var app = module.exports = express.createServer();
+var timerMap = {};
 
 app.get("/", function(req, res) {
     var result = false;
-//    if (req.host === "mohayonao.herokuapp.com") {
-        if (req.headers["user-agent"].indexOf("iPhone") !== -1) {
-            result = sendDorilaSound(req, res);
-        }
-//    }
+    //    if (req.host === "mohayonao.herokuapp.com") {
+    if (/(iphone)/i.test(req.headers["user-agent"])) {
+        result = sendDorilaSound(req, res);
+    }
+    //    }
     if (!result) {
         res.send("hello, world.");
     }
 });
 app.listen(process.env.PORT || 3001);
 
-
-var wav_doriland = (function(src) {
+var doriland_voice = (function(src) {
     var binary, b0, b1, bb, x;
     var buffer;
     var i, imax;
@@ -62,22 +62,29 @@ var wav_doriland = (function(src) {
 
 
 function sendDorilaSound(req, res) {
-    var sha1sum = crypto.createHash("sha1");
-    var digest, filename, text, match, pos1, pos2, length;
+    var o, digest, filename, match, pos1, pos2, length;
     
-    console.log("RANGE", req.headers.range);
     if (!req.headers.range) return false;
     match = req.headers.range.match(/^bytes=(\d+)-(\d+)$/);
     if (!match) return false;
     
-    text = decodeURI(req.url.substr(2));
-    sha1sum.update(text);
-    digest = sha1sum.digest("hex");
-    filename = digest + ".wav";
+    o = (function getParamsFromRequest(req) {
+        var sha1sum = crypto.createHash("sha1");
+        var text, digest, filename;
+        text = decodeURI(req.url.substr(2));
+        sha1sum.update(text);
+        digest = sha1sum.digest("hex");
+        filename = "tmp/" + digest + ".wav";
+        return {filename:filename, digest:digest, text:text}
+    }(req));
+    
+    filename = o.filename;
+    digest   = o.digest;
+    text     = o.text;
     
     pos1 = (match[1]|0) || 0;
     pos2 = (match[2]|0) || 0;
-    length = pos2 - pos1;
+    length = pos2 - pos1 + 1;
     if (! path.existsSync(filename)) {
         makeDorilaSound(filename, text);
     }
@@ -85,28 +92,28 @@ function sendDorilaSound(req, res) {
     fs.open(filename, "r", function(err, fd) {
         fs.fstat(fd, function(err, stats) {
             var filesize = util.inspect(stats).match(/size: (\d+)/)[1]|0;
-            if (length === 0) {
-                res.writeHead(200, {
+            var buffer = new Buffer(length);
+            fs.read(fd, buffer, 0, buffer.length, pos1, function(err, bytesRead, buffer) {
+                res.writeHead(206, {
+                    "Content-Range": "bytes " + pos1 + "-" + pos2 + "/" + filesize,
                     "Accept-Ranges": "bytes",
-                    "Content-Length": filesize,
+                    "Content-Length": buffer.length,
                     "Content-Type": "audio/wav",
+                    "Date": (new Date()).toGMTString(),
                     "ETag": digest
                 });
-                res.end();
-                fs.unlink(filename);
-            } else {
-                var buffer = new Buffer(length);
-                fs.read(fd, buffer, 0, buffer.length, pos1, function(err, bytesRead, buffer) {
-                    res.writeHead(206, {
-                        "Content-Range": "bytes " + pos1 + "-" + pos2 + "/" + filesize,
-                        "Accept-Ranges": "bytes",
-                        "Content-Length": buffer.length,
-                        "Content-Type": "audio/wav",
-                        "ETag": digest
-                    });
-                    res.end(buffer);
-                });
-            }
+                
+                if (timerMap[digest]) {
+                    clearTimeout(timerMap[digest])
+                }
+                timerMap[digest] = setTimeout(function() {
+                    fs.unlink(filename);
+                    delete timerMap[digest];
+                }, 15000);
+                
+                res.end(buffer);
+            });
+            
         });
     });
     return true;
@@ -117,7 +124,7 @@ function makeDorilaSound(filename, text) {
     var stream, wave, buffer, fd;
     var i, imax, y;
     
-    stream = getstream(text);
+    stream = getStream(text);
     wave = waveheader(SAMPLERATE, 1, stream.length);
     for (i = 0, imax = stream.length; i < imax; i++) {
         y = (stream[i] * 32767.0) | 0;
@@ -131,17 +138,18 @@ function makeDorilaSound(filename, text) {
 }
 
 
-function getstream(text) {
+function getStream(text) {
     var DorilaSound = require("DorilaSound");
     var size = 16384;
     var player_stub = {SAMPLERATE:SAMPLERATE,
                        STREAM_FULL_SIZE:size,
                        NONE_STREAM_FULL_SIZExC:new Float32Array(size*2)};
-    var sys  = new DorilaSound(player_stub, wav_doriland);
-    
+    var sys, size;
     var s, result;
     var amp;
     var i, imax, j, jmax;
+    
+    sys = new DorilaSound(player_stub, doriland_voice);
     
     result = [];
     sys.init({text:text});
@@ -151,20 +159,25 @@ function getstream(text) {
         for (j = 0; j < s.length; j += 2) {
             result.push((s[j] + s[j+1]) / 2.0);
         }
+        if (sys.finished) break;
     }
     
-    amp  = 1.0;
-    ampx = 1.0 / (size * 3);
-    for (i = 0; i < 3; i++) {
-        s = sys.next();
-        for (j = 0; j < s.length; j += 2) {
-            result.push((s[j] + s[j+1]) / 2.0 * amp);
-            amp -= ampx;
-            if (amp < 0) amp = 0;
+    if (! sys.finished) {
+        amp  = 1.0;
+        ampx = 1.0 / (size * 3);
+        for (i = 0; i < 3; i++) {
+            s = sys.next();
+            for (j = 0; j < s.length; j += 2) {
+                result.push((s[j] + s[j+1]) / 2.0 * amp);
+                amp -= ampx;
+                if (amp < 0) amp = 0;
+            }
+            if (sys.finished) break;
         }
     }
     return new Float32Array(result);
 }
+
 
 function waveheader(samplerate, channel, samples) {
     var l1, l2, waveBytes;

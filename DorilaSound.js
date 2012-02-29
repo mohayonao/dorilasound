@@ -568,7 +568,7 @@ module.exports = (function() {
                     counter += counterMax;
                 } else {
                     this.finished = true;
-                    counter = Infinity;    
+                    counter = Infinity;
                 }
             }
             counter -= 128;
