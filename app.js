@@ -33,11 +33,8 @@ var timerMap = {};
 
 app.get("/", function(req, res) {
     var result = false;
-    console.log("host=" + req.headers.host);
-    if (req.headers.host === "mohayonao.herokuapp.com") {
-        if (/(iphone)/i.test(req.headers["user-agent"])) {
-            result = sendDorilaSound(req, res);
-        }
+    if (/(iphone)/i.test(req.headers["user-agent"])) {
+        result = sendDorilaSound(req, res);
     }
     if (!result) {
         res.send("hello, world.");
