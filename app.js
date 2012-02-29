@@ -154,7 +154,7 @@ function getStream(text) {
     result = [];
     sys.init({text:text});
     sys.play();
-    for (i = 0; i < 17; i++) {
+    for (i = 0; i < 13; i++) {
         s = sys.next();
         for (j = 0; j < s.length; j += 2) {
             result.push((s[j] + s[j+1]) / 2.0);
